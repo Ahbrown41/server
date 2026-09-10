@@ -91,7 +91,7 @@ def _make_player(items: list[QueueItem], current_index: int = 0) -> tuple[SonosP
     player._player_id = "sonos_player"
     player.connected = True
     player.cloud_queue_id = QUEUE_ID
-    player.cloud_queue_version = 1.0
+    player.cloud_queue_version = 1000
     player.cloud_queue_item_generation = 0
     player._announcement_media = None
     return player, queues
@@ -280,10 +280,28 @@ def _make_provider() -> SonosPlayerProvider:
     return provider
 
 
+async def test_the_queue_version_is_a_whole_number_that_always_moves() -> None:
+    """
+    Every bump changes what the speaker sees, even two within one millisecond.
+
+    The speaker reads an unchanged queueVersion as "nothing changed", so two changes
+    must never share one.
+    """
+    player, _ = _make_player([_make_queue_item("track0")])
+    player.cloud_queue_version = 10**15  # ahead of the clock, as after a burst of bumps
+
+    player.bump_cloud_queue_version()
+    first = player.cloud_queue_version
+    player.bump_cloud_queue_version()
+
+    assert isinstance(first, int)
+    assert player.cloud_queue_version == first + 1
+
+
 async def test_itemwindow_passes_the_speakers_request_through() -> None:
     """Test the sizes and centre the speaker asks for reach the window builder."""
     player = MagicMock(spec=SonosPlayer)
-    player.cloud_queue_version = 12.5
+    player.cloud_queue_version = 12500
     player.cloud_queue_item_generation = 4
     player.bare_item_id = SonosPlayer.bare_item_id
     player.build_cloud_queue_window = AsyncMock(
@@ -304,7 +322,7 @@ async def test_itemwindow_passes_the_speakers_request_through() -> None:
         "track7", max_previous=9, max_upcoming=10
     )
     body = json.loads(response.text or "{}")
-    assert body["queueVersion"] == "12.5"
+    assert body["queueVersion"] == "12500"
     assert body["contextVersion"] == "3"
     assert body["includesBeginningOfQueue"] is True
 
@@ -313,7 +331,7 @@ async def test_itemwindow_reports_end_of_queue_when_it_cannot_be_described() -> 
     """Test a queue that went away answers with an empty window instead of an error."""
     player = MagicMock(spec=SonosPlayer)
     player.display_name = "Kantoor"
-    player.cloud_queue_version = 1.0
+    player.cloud_queue_version = 1000
     player.cloud_queue_item_generation = 1
     player.build_cloud_queue_window = AsyncMock(side_effect=InvalidDataError("no session"))
     provider = _make_provider()

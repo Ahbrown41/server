@@ -108,7 +108,7 @@ class SonosPlayer(Player):
         # the MA queue the loaded cloud queue serves, and the version the speaker
         # compares against to decide whether its cached copy is still valid
         self.cloud_queue_id: str | None = None
-        self.cloud_queue_version: float = time.time()
+        self.cloud_queue_version: int = int(time.time() * 1000)
         # advanced on every play_media: item ids are served suffixed with it, so a
         # reload of the item the speaker is already playing gets a fresh identity.
         # Clock-seeded (nanoseconds), so a recreated player never reuses a
@@ -532,7 +532,8 @@ class SonosPlayer(Player):
         An unchanged queueVersion reads as "nothing changed", so this must happen the moment
         the queue does: a window served in between would carry a version read as current.
         """
-        self.cloud_queue_version = time.time()
+        # integer milliseconds, strictly increasing so two changes in one millisecond differ
+        self.cloud_queue_version = max(self.cloud_queue_version + 1, int(time.time() * 1000))
 
     async def refresh_cloud_queue(self) -> None:
         """Signal the speaker that the queue it is playing changed."""

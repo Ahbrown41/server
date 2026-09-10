@@ -285,6 +285,9 @@ class SonosPlayerProvider(PlayerProvider):
         if TYPE_CHECKING:
             assert isinstance(sonos_player, SonosPlayer)
         endpoint = path_parts[3]
+        self.logger.debug(
+            "Cloud queue %s from %s: %s", endpoint, sonos_player.player_id, dict(request.query)
+        )
         if endpoint == "itemWindow":
             return await self._handle_sonos_queue_itemwindow(sonos_player, request)
         if endpoint == "version":
@@ -328,6 +331,7 @@ class SonosPlayerProvider(PlayerProvider):
             # one - any other failure must not read to the speaker as "queue over".
             self.logger.debug("Cannot describe the queue for %s: %s", player.display_name, err)
             window = SonosQueueWindow(includes_beginning=True, includes_end=True)
+        items = [self._parse_sonos_queue_item(player, x, wire_generation) for x in window.items]
         result = {
             "includesBeginningOfQueue": window.includes_beginning,
             "includesEndOfQueue": window.includes_end,
@@ -336,10 +340,16 @@ class SonosPlayerProvider(PlayerProvider):
             # player's requested version, otherwise a changed queue keeps a stale version
             # label and Sonos never realises it changed.
             "queueVersion": str(queue_version),
-            "items": [
-                self._parse_sonos_queue_item(player, x, wire_generation) for x in window.items
-            ],
+            "items": items,
         }
+        self.logger.debug(
+            "Cloud queue window for %s: version %s, begin=%s end=%s, items %s",
+            player.player_id,
+            queue_version,
+            window.includes_beginning,
+            window.includes_end,
+            [(x["id"], x["track"]["durationMillis"]) for x in items],
+        )
         return web.json_response(result)
 
     async def _handle_sonos_queue_version(
@@ -351,8 +361,8 @@ class SonosPlayerProvider(PlayerProvider):
         https://docs.sonos.com/reference/version
         """
         context_version = request.query.get("contextVersion") or "1"
-        # keep sub-second resolution: the queue can change several times within the same
-        # second and Sonos treats an unchanged queueVersion as "nothing changed" (stale window).
+        # grows on every change: Sonos treats an unchanged queueVersion as "nothing changed"
+        # (stale window)
         result = {
             "contextVersion": context_version,
             "queueVersion": str(player.cloud_queue_version),
@@ -410,6 +420,7 @@ class SonosPlayerProvider(PlayerProvider):
         https://docs.sonos.com/reference/timeplayed
         """
         json_body = await request.json()
+        self.logger.debug("Cloud queue report from %s: %s", player.player_id, json_body["items"])
         for item in json_body["items"]:
             if error := item.get("error"):
                 self._log_reported_playback_error(player, item, error)
