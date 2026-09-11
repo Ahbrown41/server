@@ -2083,6 +2083,11 @@ class TestSupportedFeaturesFromActiveMembers:
 
         assert PlayerFeature.VOLUME_SET in sgp.supported_features
         assert PlayerFeature.VOLUME_MUTE in sgp.supported_features
+        # PlayerState uses the final feature set, which must preserve the
+        # member-derived controls even though the group has no native control.
+        sgp.update_state(signal_event=False)
+        assert PlayerFeature.VOLUME_SET in sgp.state.supported_features
+        assert PlayerFeature.VOLUME_MUTE in sgp.state.supported_features
 
 
 class TestSupportedFeaturesPower:
